@@ -32,6 +32,6 @@ thiserror = "1.0"
 use-serde = ["serde", "serde_json"]
 default = ["use-serde"]
 derive = ["influxdb_derive"]
-
+reqwest-client = []
 [dev-dependencies]
 tokio = { version =  "1", features = ["macros"] }
