@@ -48,8 +48,6 @@
 
 mod de;
 
-use surf::StatusCode;
-
 use serde::{de::DeserializeOwned, Deserialize};
 
 use crate::{Client, Error, Query, ReadQuery};
@@ -125,7 +123,7 @@ pub struct TaggedSeries<TAG, T> {
 impl Client {
     pub async fn json_query(&self, q: ReadQuery) -> Result<DatabaseQueryResult, Error> {
         let query = q.build().map_err(|err| Error::InvalidQueryError {
-            error: format!("{}", err),
+            error: format!("{:?}", err),
         })?;
 
         let read_query = query.get();
@@ -145,28 +143,28 @@ impl Client {
         parameters.insert("q", read_query);
         let request = self
             .client
-            .get(url)
+            .request(reqwest::Method::GET,url)
             .query(&parameters)
+            .build()
             .map_err(|err| Error::UrlConstructionError {
                 error: err.to_string(),
-            })?
-            .build();
+            })?;
 
         let mut res = self
             .client
-            .send(request)
+            .execute(request)
             .await
             .map_err(|err| Error::ConnectionError {
                 error: err.to_string(),
             })?;
 
         match res.status() {
-            StatusCode::Unauthorized => return Err(Error::AuthorizationError),
-            StatusCode::Forbidden => return Err(Error::AuthenticationError),
+            reqwest::StatusCode::UNAUTHORIZED  => return Err(Error::AuthorizationError),
+            reqwest::StatusCode::FORBIDDEN => return Err(Error::AuthenticationError),
             _ => {}
         }
 
-        let body = res.body_bytes().await.map_err(|err| Error::ProtocolError {
+        let body = res.bytes().await.map_err(|err| Error::ProtocolError {
             error: err.to_string(),
         })?;
 

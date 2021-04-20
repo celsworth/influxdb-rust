@@ -16,7 +16,6 @@
 //! ```
 
 use futures::prelude::*;
-use surf::{self, Client as SurfClient, StatusCode};
 
 use crate::query::QueryType;
 use crate::Error;
@@ -29,7 +28,7 @@ use std::sync::Arc;
 pub struct Client {
     pub(crate) url: Arc<String>,
     pub(crate) parameters: Arc<HashMap<&'static str, String>>,
-    pub(crate) client: SurfClient,
+    pub(crate) client: reqwest::Client,
 }
 
 impl Client {
@@ -48,16 +47,16 @@ impl Client {
     /// let _client = Client::new("http://localhost:8086", "test");
     /// ```
     pub fn new<S1, S2>(url: S1, database: S2) -> Self
-    where
-        S1: Into<String>,
-        S2: Into<String>,
+        where
+            S1: Into<String>,
+            S2: Into<String>,
     {
         let mut parameters = HashMap::<&str, String>::new();
         parameters.insert("db", database.into());
         Client {
             url: Arc::new(url.into()),
             parameters: Arc::new(parameters),
-            client: SurfClient::new(),
+            client: reqwest::Client::new(),
         }
     }
 
@@ -76,9 +75,9 @@ impl Client {
     /// let _client = Client::new("http://localhost:9086", "test").with_auth("admin", "password");
     /// ```
     pub fn with_auth<S1, S2>(mut self, username: S1, password: S2) -> Self
-    where
-        S1: Into<String>,
-        S2: Into<String>,
+        where
+            S1: Into<String>,
+            S2: Into<String>,
     {
         let mut with_auth = self.parameters.as_ref().clone();
         with_auth.insert("u", username.into());
@@ -103,17 +102,23 @@ impl Client {
     /// Returns a tuple of build type and version number
     pub async fn ping(&self) -> Result<(String, String), Error> {
         let url = &format!("{}/ping", self.url);
+        let request = self
+            .client
+            .request(reqwest::Method::GET,url)
+            .build()
+            .map_err(|err| Error::UrlConstructionError {
+                error: err.to_string(),
+            })?;
         let res = self
             .client
-            .get(url)
-            .send()
+            .execute(request)
             .await
             .map_err(|err| Error::ProtocolError {
                 error: format!("{}", err),
             })?;
 
-        let build = res.header("X-Influxdb-Build").unwrap().as_str();
-        let version = res.header("X-Influxdb-Version").unwrap().as_str();
+        let build = res.headers().get("X-Influxdb-Build").unwrap().to_str().unwrap();
+        let version = res.headers().get("X-Influxdb-Version").unwrap().to_str().unwrap();
 
         Ok((build.to_owned(), version.to_owned()))
     }
@@ -157,14 +162,14 @@ impl Client {
     ///
     /// [`Error`]: enum.Error.html
     pub async fn query<'q, Q>(&self, q: &'q Q) -> Result<String, Error>
-    where
-        Q: Query,
+        where
+            Q: Query,
     {
         let query = q.build().map_err(|err| Error::InvalidQueryError {
             error: err.to_string(),
         })?;
 
-        let request_builder = match q.get_type() {
+        let request = match q.get_type() {
             QueryType::ReadQuery => {
                 let read_query = query.get();
                 let url = &format!("{}/query", &self.url);
@@ -172,40 +177,40 @@ impl Client {
                 parameters.insert("q", read_query.clone());
 
                 if read_query.contains("SELECT") || read_query.contains("SHOW") {
-                    self.client.get(url).query(&parameters)
+                    self.client.request(reqwest::Method::GET, url).query(&parameters).build()
                 } else {
-                    self.client.post(url).query(&parameters)
+                    self.client.request(reqwest::Method::POST, url).query(&parameters).build()
                 }
             }
             QueryType::WriteQuery(precision) => {
                 let url = &format!("{}/write", &self.url);
                 let mut parameters = self.parameters.as_ref().clone();
                 parameters.insert("precision", precision);
-
-                self.client.post(url).body(query.get()).query(&parameters)
+                self.client.request(reqwest::Method::POST, url).body(query.get()).query(&parameters).build()
             }
         }
-        .map_err(|err| Error::UrlConstructionError {
-            error: err.to_string(),
-        })?;
-
-        let request = request_builder.build();
-        let mut res = self
-            .client
-            .send(request)
-            .map_err(|err| Error::ConnectionError {
+            .map_err(|err| Error::UrlConstructionError {
                 error: err.to_string(),
-            })
-            .await?;
+            })?;
 
-        match res.status() {
-            StatusCode::Unauthorized => return Err(Error::AuthorizationError),
-            StatusCode::Forbidden => return Err(Error::AuthenticationError),
+        let request_exec = self.client.execute(request).await;
+        let response = match request_exec {
+            Ok(res) => {
+                res
+            }
+            Err(err) => {
+                return Err(Error::ConnectionError {
+                    error: err.to_string(),
+                });
+            }
+        };
+        match response.status() {
+            reqwest::StatusCode::UNAUTHORIZED => return Err(Error::AuthorizationError),
+            reqwest::StatusCode::FORBIDDEN => return Err(Error::AuthenticationError),
             _ => {}
         }
-
-        let s = res
-            .body_string()
+        let s = response
+            .text()
             .await
             .map_err(|_| Error::DeserializationError {
                 error: "response could not be converted to UTF-8".to_string(),
