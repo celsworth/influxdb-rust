@@ -34,5 +34,4 @@ default = ["use-serde"]
 derive = ["influxdb_derive"]
 
 [dev-dependencies]
-async-std = { version = "1.6.5", features = ["attributes"] }
-tokio = { version =  "0.2.22", features = ["rt-threaded", "macros"] }
+tokio = { version =  "1", features = ["macros"] }
