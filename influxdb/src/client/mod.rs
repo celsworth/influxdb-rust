@@ -47,9 +47,9 @@ impl Client {
     /// let _client = Client::new("http://localhost:8086", "test");
     /// ```
     pub fn new<S1, S2>(url: S1, database: S2) -> Self
-        where
-            S1: Into<String>,
-            S2: Into<String>,
+    where
+        S1: Into<String>,
+        S2: Into<String>,
     {
         let mut parameters = HashMap::<&str, String>::new();
         parameters.insert("db", database.into());
@@ -75,9 +75,9 @@ impl Client {
     /// let _client = Client::new("http://localhost:9086", "test").with_auth("admin", "password");
     /// ```
     pub fn with_auth<S1, S2>(mut self, username: S1, password: S2) -> Self
-        where
-            S1: Into<String>,
-            S2: Into<String>,
+    where
+        S1: Into<String>,
+        S2: Into<String>,
     {
         let mut with_auth = self.parameters.as_ref().clone();
         with_auth.insert("u", username.into());
@@ -104,7 +104,7 @@ impl Client {
         let url = &format!("{}/ping", self.url);
         let request = self
             .client
-            .request(reqwest::Method::GET,url)
+            .request(reqwest::Method::GET, url)
             .build()
             .map_err(|err| Error::UrlConstructionError {
                 error: err.to_string(),
@@ -117,8 +117,18 @@ impl Client {
                 error: format!("{}", err),
             })?;
 
-        let build = res.headers().get("X-Influxdb-Build").unwrap().to_str().unwrap();
-        let version = res.headers().get("X-Influxdb-Version").unwrap().to_str().unwrap();
+        let build = res
+            .headers()
+            .get("X-Influxdb-Build")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        let version = res
+            .headers()
+            .get("X-Influxdb-Version")
+            .unwrap()
+            .to_str()
+            .unwrap();
 
         Ok((build.to_owned(), version.to_owned()))
     }
@@ -162,8 +172,8 @@ impl Client {
     ///
     /// [`Error`]: enum.Error.html
     pub async fn query<'q, Q>(&self, q: &'q Q) -> Result<String, Error>
-        where
-            Q: Query,
+    where
+        Q: Query,
     {
         let query = q.build().map_err(|err| Error::InvalidQueryError {
             error: err.to_string(),
@@ -177,27 +187,35 @@ impl Client {
                 parameters.insert("q", read_query.clone());
 
                 if read_query.contains("SELECT") || read_query.contains("SHOW") {
-                    self.client.request(reqwest::Method::GET, url).query(&parameters).build()
+                    self.client
+                        .request(reqwest::Method::GET, url)
+                        .query(&parameters)
+                        .build()
                 } else {
-                    self.client.request(reqwest::Method::POST, url).query(&parameters).build()
+                    self.client
+                        .request(reqwest::Method::POST, url)
+                        .query(&parameters)
+                        .build()
                 }
             }
             QueryType::WriteQuery(precision) => {
                 let url = &format!("{}/write", &self.url);
                 let mut parameters = self.parameters.as_ref().clone();
                 parameters.insert("precision", precision);
-                self.client.request(reqwest::Method::POST, url).body(query.get()).query(&parameters).build()
+                self.client
+                    .request(reqwest::Method::POST, url)
+                    .body(query.get())
+                    .query(&parameters)
+                    .build()
             }
         }
-            .map_err(|err| Error::UrlConstructionError {
-                error: err.to_string(),
-            })?;
+        .map_err(|err| Error::UrlConstructionError {
+            error: err.to_string(),
+        })?;
 
         let request_exec = self.client.execute(request).await;
         let response = match request_exec {
-            Ok(res) => {
-                res
-            }
+            Ok(res) => res,
             Err(err) => {
                 return Err(Error::ConnectionError {
                     error: err.to_string(),

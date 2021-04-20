@@ -143,7 +143,7 @@ impl Client {
         parameters.insert("q", read_query);
         let request = self
             .client
-            .request(reqwest::Method::GET,url)
+            .request(reqwest::Method::GET, url)
             .query(&parameters)
             .build()
             .map_err(|err| Error::UrlConstructionError {
@@ -159,7 +159,7 @@ impl Client {
             })?;
 
         match res.status() {
-            reqwest::StatusCode::UNAUTHORIZED  => return Err(Error::AuthorizationError),
+            reqwest::StatusCode::UNAUTHORIZED => return Err(Error::AuthorizationError),
             reqwest::StatusCode::FORBIDDEN => return Err(Error::AuthenticationError),
             _ => {}
         }
